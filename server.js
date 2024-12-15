@@ -3,7 +3,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const axios = require("axios");
-const createObjectCsvWriter = require('csv-writer').createObjectCsvWriter;
+const createObjectCsvWriter = require("csv-writer").createObjectCsvWriter;
 
 // Initialize Express
 const app = express();
@@ -84,7 +84,6 @@ app.post("/api/auth/student", async (req, res) => {
           "https://spectraserver-indol.vercel.app/api/search",
           { searchInput: req.body.rollNo }
         );
-
 
         if (externalResponse.data && externalResponse.data.length > 0) {
           const externalStudent = externalResponse.data[0];
@@ -392,7 +391,10 @@ app.post("/api/security/request-action", async (req, res) => {
         await Request.findByIdAndDelete(requestId);
 
         // Remove the corresponding outgoing record
-        await Outgoing.findOneAndDelete({ rollNo: request.rollNo, reason: request.reason });
+        await Outgoing.findOneAndDelete({
+          rollNo: request.rollNo,
+          reason: request.reason,
+        });
 
         res.json({
           success: true,
@@ -506,15 +508,15 @@ app.delete("/api/outgoings/:id", async (req, res) => {
 });
 
 // Add this to your existing server.js file
-app.post('/api/register-faculty', async (req, res) => {
+app.post("/api/register-faculty", async (req, res) => {
   const { facultyName, password, role, branch, year, section } = req.body;
 
   try {
     // Create username from faculty name (e.g., first letter of each word)
     const uname = facultyName
-      .split(' ')
-      .map(word => word[0])
-      .join('')
+      .split(" ")
+      .map((word) => word[0])
+      .join("")
       .toLowerCase();
 
     // Create new faculty record
@@ -527,25 +529,25 @@ app.post('/api/register-faculty', async (req, res) => {
       year: year,
       section: section,
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
     });
 
     await faculty.save();
 
     // Update students based on role
-    if (role === 'hod') {
+    if (role === "hod") {
       // Update all students in the branch to have this HOD
       await Student.updateMany(
         { branch: branch },
         { $set: { hod: facultyName } }
       );
-    } else if (role === 'mentor') {
+    } else if (role === "mentor") {
       // Update students in specific branch, year and section to have this mentor
       await Student.updateMany(
-        { 
+        {
           branch: branch,
           year: year,
-          section: section 
+          section: section,
         },
         { $set: { mentor: facultyName } }
       );
@@ -553,34 +555,33 @@ app.post('/api/register-faculty', async (req, res) => {
 
     // Generate CSV report
     const csvWriter = createObjectCsvWriter({
-      path: 'faculty_assignments.csv',
+      path: "faculty_assignments.csv",
       header: [
-        { id: 'name', title: 'Name' },
-        { id: 'role', title: 'Role' },
-        { id: 'branch', title: 'Branch' },
-        { id: 'year', title: 'Year' },
-        { id: 'section', title: 'Section' },
+        { id: "name", title: "Name" },
+        { id: "role", title: "Role" },
+        { id: "branch", title: "Branch" },
+        { id: "year", title: "Year" },
+        { id: "section", title: "Section" },
       ],
     });
 
     const facultyList = await Faculty.find({});
     await csvWriter.writeRecords(facultyList);
 
-    res.json({ 
-      success: true, 
-      message: 'Faculty registered successfully',
+    res.json({
+      success: true,
+      message: "Faculty registered successfully",
       faculty: {
         name: facultyName,
         role: role,
-        uname: uname
-      }
+        uname: facultyName,
+      },
     });
-
   } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to register faculty member'
+    console.error("Registration error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to register faculty member",
     });
   }
 });
