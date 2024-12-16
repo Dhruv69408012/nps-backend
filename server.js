@@ -3,9 +3,8 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const axios = require("axios");
-const createObjectCsvWriter = require("csv-writer").createObjectCsvWriter;
 const admin = require("firebase-admin"); // Import Firebase Admin SDK
-
+const { getHod, getMentor, setHod, setMentor } = require("./hodmentor");
 // Initialize Express
 const app = express();
 const port = process.env.PORT || 3000;
@@ -54,16 +53,7 @@ app.get("/", (req, res) => {
   res.send("Hello World!");
 });
 
-// Student Routes
-app.get("/api/users", async (req, res) => {
-  try {
-    const users = await Student.find();
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({ message: "Error retrieving users", error: err });
-  }
-});
-
+// Authentication Routes
 app.post("/api/auth/student", async (req, res) => {
   try {
     console.log(req.body);
@@ -118,8 +108,10 @@ app.post("/api/auth/student", async (req, res) => {
               branch: newStudent.branch,
               year: newStudent.year,
               section: newStudent.section,
-              mentor: newStudent.mentor,
-              hod: newStudent.hod,
+              mentor: await getMentor(
+                `${newStudent.year}${newStudent.branch}${newStudent.section}`
+              ),
+              hod: await getHod(`${newStudent.year}${newStudent.branch}`),
               phone: newStudent.phone,
               uname: newStudent.uname,
             },
@@ -148,7 +140,6 @@ app.post("/api/auth/student", async (req, res) => {
   }
 });
 
-// Authentication Routes
 app.post("/api/auth/faculty", async (req, res) => {
   try {
     const faculty = await Faculty.findOne({
@@ -246,14 +237,13 @@ app.post("/api/requests", async (req, res) => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    axios.post(`https://app.nativenotify.com/api/indie/notification`, {
+    axios.post(process.env.NATIVENOTIFY_API_URL, {
       subID: req.body.to,
-      appId: 25378,
-      appToken: "Vcvb05fe8Oc24pqJmPQmZH",
+      appId: process.env.NATIVENOTIFY_APP_ID,
+      appToken: process.env.NATIVENOTIFY_APP_TOKEN,
       title: "New Leave Request",
       message: "A new leave request has been made by " + req.body.rollNo,
     });
-    console.log("Notification sent");
 
     await request.save();
     res.status(201).json({ success: true, request });
@@ -295,7 +285,7 @@ app.get("/api/faculty/requests/:uname", async (req, res) => {
 app.post("/api/faculty/request-action", async (req, res) => {
   try {
     const { requestId, action } = req.body;
-
+    console.log(req.body);
     const request = await Request.findByIdAndUpdate(
       requestId,
       {
@@ -304,7 +294,33 @@ app.post("/api/faculty/request-action", async (req, res) => {
       },
       { new: true }
     );
+    axios.post(process.env.NATIVENOTIFY_API_URL, {
+      subID: request.rollNo,
+      appId: process.env.NATIVENOTIFY_APP_ID,
+      appToken: process.env.NATIVENOTIFY_APP_TOKEN,
+      title: "Leave Request Status",
+      message:
+        "Your leave request has been " +
+        (action === "approve" ? "sent to admin" : "rejected"),
+    });
 
+    // Fetch all admins
+    const admins = await Admin.find();
+
+    // Send notifications to all admins
+    for (const admin of admins) {
+      axios.post(process.env.NATIVENOTIFY_API_URL, {
+        subID: admin.uname, // Assuming 'uname' is the identifier for the admin
+        appId: process.env.NATIVENOTIFY_APP_ID,
+        appToken: process.env.NATIVENOTIFY_APP_TOKEN,
+        title: "Leave Request Status",
+        message:
+          "A leave request has been " +
+          (action === "approve" ? "sent to admin" : "rejected"),
+      });
+    }
+
+    console.log(request.rollNo);
     if (request) {
       res.json({
         success: true,
@@ -357,6 +373,15 @@ app.post("/api/admin/request-action", async (req, res) => {
       },
       { new: true }
     );
+    axios.post(process.env.NATIVENOTIFY_API_URL, {
+      subID: request.rollNo,
+      appId: process.env.NATIVENOTIFY_APP_ID,
+      appToken: process.env.NATIVENOTIFY_APP_TOKEN,
+      title: "Leave Request Status",
+      message:
+        "Your leave request has been " +
+        (action === "approve" ? "approved" : "rejected"),
+    });
 
     if (request) {
       if (action === "approve") {
@@ -438,7 +463,16 @@ app.post("/api/security/request-action", async (req, res) => {
   }
 });
 
-// Attendance Route
+// Student Routes
+app.get("/api/users", async (req, res) => {
+  try {
+    const users = await Student.find();
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ message: "Error retrieving users", error: err });
+  }
+});
+
 app.get("/api/student/attendance/:rollNo", async (req, res) => {
   try {
     const searchResponse = await makePostRequest(
@@ -524,23 +558,18 @@ app.delete("/api/outgoings/:id", async (req, res) => {
   }
 });
 
-// Add this to your existing server.js file
+// Faculty Registration Route
 app.post("/api/register-faculty", async (req, res) => {
   const { facultyName, password, role, branch, year, section } = req.body;
 
   try {
     // Create username from faculty name (e.g., first letter of each word)
-    const uname = facultyName
-      .split(" ")
-      .map((word) => word[0])
-      .join("")
-      .toLowerCase();
 
     // Create new faculty record
     const faculty = new Faculty({
       name: facultyName,
       password: password,
-      uname: uname,
+      uname: facultyName,
       role: role,
       branch: branch,
       year: year,
@@ -558,6 +587,7 @@ app.post("/api/register-faculty", async (req, res) => {
         { branch: branch },
         { $set: { hod: facultyName } }
       );
+      await setHod(`${year}${branch}`, facultyName);
     } else if (role === "mentor") {
       // Update students in specific branch, year and section to have this mentor
       await Student.updateMany(
@@ -568,22 +598,10 @@ app.post("/api/register-faculty", async (req, res) => {
         },
         { $set: { mentor: facultyName } }
       );
+      await setMentor(`${year}${branch}${section}`, facultyName);
     }
 
     // Generate CSV report
-    const csvWriter = createObjectCsvWriter({
-      path: "faculty_assignments.csv",
-      header: [
-        { id: "name", title: "Name" },
-        { id: "role", title: "Role" },
-        { id: "branch", title: "Branch" },
-        { id: "year", title: "Year" },
-        { id: "section", title: "Section" },
-      ],
-    });
-
-    const facultyList = await Faculty.find({});
-    await csvWriter.writeRecords(facultyList);
 
     res.json({
       success: true,
@@ -603,7 +621,22 @@ app.post("/api/register-faculty", async (req, res) => {
   }
 });
 
-// Add this route to send notifications
+// Graduates Routes
+app.get("/api/students/graduates", async (req, res) => {
+  try {
+    const result = await Student.deleteMany({ year: 4 }); // Assuming there's a 'graduated' field in the Student model
+    await Student.deleteMany({});
+    res.json({
+      success: true,
+      deletedCount: result.deletedCount, // Return the number of deleted graduates
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
 
 // Start Server
 app.listen(port, () => {
