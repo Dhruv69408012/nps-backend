@@ -33,7 +33,8 @@ app.use(express.json());
 
 // MongoDB connection
 mongoose
-  .connect("mongodb://localhost:27017/nps", {
+  // .connect("mongodb://localhost:27017/nps", {
+  .connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
   })
