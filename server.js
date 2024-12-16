@@ -4,10 +4,16 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const axios = require("axios");
 const createObjectCsvWriter = require("csv-writer").createObjectCsvWriter;
+const admin = require("firebase-admin"); // Import Firebase Admin SDK
 
 // Initialize Express
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Initialize Firebase Admin SDK
+admin.initializeApp({
+  credential: admin.credential.applicationDefault(), // Use your Firebase credentials
+});
 
 // Utility Functions
 const makePostRequest = async (url, data, headers = {}) => {
@@ -27,7 +33,7 @@ app.use(express.json());
 
 // MongoDB connection
 mongoose
-  .connect(process.env.MONGODB_URI, {
+  .connect("mongodb://localhost:27017/nps", {
     useNewUrlParser: true,
     useUnifiedTopology: true,
   })
@@ -59,6 +65,7 @@ app.get("/api/users", async (req, res) => {
 
 app.post("/api/auth/student", async (req, res) => {
   try {
+    console.log(req.body);
     const student = await Student.findOne({
       rollNo: req.body.rollNo,
       password: req.body.password,
@@ -231,12 +238,21 @@ app.post("/api/auth/security", async (req, res) => {
 // Request Routes
 app.post("/api/requests", async (req, res) => {
   try {
+    console.log(req.body);
     const request = new Request({
       ...req.body,
       status: "pending",
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    axios.post(`https://app.nativenotify.com/api/indie/notification`, {
+      subID: req.body.to,
+      appId: 25378,
+      appToken: "Vcvb05fe8Oc24pqJmPQmZH",
+      title: "New Leave Request",
+      message: "A new leave request has been made by " + req.body.rollNo,
+    });
+    console.log("Notification sent");
 
     await request.save();
     res.status(201).json({ success: true, request });
@@ -585,6 +601,8 @@ app.post("/api/register-faculty", async (req, res) => {
     });
   }
 });
+
+// Add this route to send notifications
 
 // Start Server
 app.listen(port, () => {
